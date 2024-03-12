@@ -2,7 +2,6 @@
 <?php
 include $_composer_autoload_path ?? __DIR__ . '/../vendor/autoload.php';
 
-use jc21\CliTable;
 use Roave\BetterReflection\BetterReflection;
 use Roave\BetterReflection\Reflector\DefaultReflector;
 use Roave\BetterReflection\SourceLocator\SourceStubber\ReflectionSourceStubber;
@@ -173,9 +172,9 @@ if(is_writable($tmp_dir)) {
         echo implode(PHP_EOL, $methods_in_right_branch_not_in_left)  . PHP_EOL;
         
         $diff_results[] = [
-            'className'     => $class_to_compare,
-            $left_branch    => implode(PHP_EOL, $methods_in_left_not_in_right_branch)  . PHP_EOL,
-            $right_branch   => implode(PHP_EOL, $methods_in_right_branch_not_in_left)  . PHP_EOL,
+            'Class Name'                    => $class_to_compare,
+            "{$left_branch} branch"         => implode(PHP_EOL, $methods_in_left_not_in_right_branch)  . PHP_EOL,
+            "   {$right_branch} branch"     => implode(PHP_EOL, $methods_in_right_branch_not_in_left)  . PHP_EOL,
         ];
         
         echo PHP_EOL ."DONE: Processing `{$class_to_compare}`...." . PHP_EOL;
@@ -183,14 +182,8 @@ if(is_writable($tmp_dir)) {
     }
     
     echo PHP_EOL . PHP_EOL;
-    $table = new CliTable;
-    $table->setTableColor('blue');
-    $table->setHeaderColor('cyan');
-    $table->addField('Class Name',  'className',    false,  'white');
-    $table->addField($left_branch,  $left_branch,   false,  'white');
-    $table->addField($right_branch, $right_branch,  false,  'white');
-    $table->injectData($diff_results);
-    $table->display();
+    $climate = new \League\CLImate\CLImate();
+    $climate->table($diff_results);
     
     $end_time = microtime(true);
     $elapsed = $end_time - $start_time;
