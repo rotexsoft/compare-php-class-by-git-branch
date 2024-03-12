@@ -1,0 +1,204 @@
+#!/usr/bin/env php
+<?php
+include dirname(__DIR__, 1) . '/vendor/autoload.php';
+
+use jc21\CliTable;
+use Roave\BetterReflection\BetterReflection;
+use Roave\BetterReflection\Reflector\DefaultReflector;
+use Roave\BetterReflection\SourceLocator\SourceStubber\ReflectionSourceStubber;
+use Roave\BetterReflection\SourceLocator\Type\AggregateSourceLocator;
+use Roave\BetterReflection\SourceLocator\Type\PhpInternalSourceLocator;
+use Roave\BetterReflection\SourceLocator\Type\DirectoriesSourceLocator;
+use Roave\BetterReflection\SourceLocator\Type\Composer\Factory\MakeLocatorForComposerJsonAndInstalledJson;
+
+ini_set('display_errors', '1' );
+ini_set('error_reporting', E_ALL);
+ini_set('memory_limit', '2048M');
+
+function readableElapsedTime($microtime, $format = null, $round = 3) {
+    
+    if (is_null($format)) {
+        $format = '%.3f%s';
+    }
+
+    if ($microtime >= 3600) {
+        
+        $unit = ' hour(s)';
+        $time = round(($microtime / 3600), $round);
+        
+    } elseif ($microtime >= 60) {
+        
+        $unit = ' minute(s)';
+        $time = round(($microtime / 60), $round);
+        
+    } elseif ($microtime >= 1) {
+        
+        $unit = ' second(s)';
+        $time = round($microtime, $round);
+        
+    } else {
+        
+        $unit = 'ms';
+        $time = round($microtime*1000);
+        $format = preg_replace('/(%.[\d]+f)/', '%d', $format);
+    }
+
+    return sprintf($format, $time, $unit);
+}
+
+$tmp_dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR;
+
+if(is_writable($tmp_dir)) {
+    
+    gc_enable();
+    $start_time = microtime(true);
+    
+    $diff_results = [];
+    $classes_to_compare = [
+        '\\LeanOrm\\Model',
+        '\\LeanOrm\\DBConnector',
+        '\\LeanOrm\\CachingModel',
+        '\\LeanOrm\\Utils',
+        '\\LeanOrm\\Model\\Collection',
+        '\\LeanOrm\\Model\\Record',
+        '\\LeanOrm\\Model\\ReadOnlyRecord',
+    ];
+    $repo_url = 'https://github.com/rotexsoft/leanorm.git';
+    $repo_name = 'leanorm';
+    $left_branch = 'master';
+    $right_branch = '4.x';
+    $code_left_branch_path = "{$tmp_dir}{$repo_name}-{$left_branch}";
+    $code_right_branch_path = "{$tmp_dir}{$repo_name}-{$right_branch}";
+
+    $clone_left_branch = "git clone -b {$left_branch} {$repo_url} {$code_left_branch_path}";
+    $clone_right_branch = "git clone -b {$right_branch} {$repo_url} {$code_right_branch_path}";
+    (file_exists($code_left_branch_path)) || system($clone_left_branch); // if already cloned, file_exists($code_left_branch_path), don't clone again
+    (file_exists($code_right_branch_path)) || system($clone_right_branch); // if already cloned, file_exists($code_right_branch_path), don't clone again
+
+    system("cd $code_left_branch_path && composer install --no-dev");  // install composer dependencies
+    system("cd $code_right_branch_path && composer install --no-dev"); // install composer dependencies
+    system ('cd  ' . __DIR__);
+
+    ////////////////////////////////////////////////////////////////////////////
+    echo PHP_EOL ."Processing all Class Files...." . PHP_EOL;
+
+    ////////////////////////////////////////////////////////
+    $astLocator = (new BetterReflection())->astLocator();
+//    $directoriesSourceLocator = new DirectoriesSourceLocator(
+//        [
+//            $code_left_branch_path . DIRECTORY_SEPARATOR . 'src',
+//            $code_left_branch_path . DIRECTORY_SEPARATOR . 'vendor',
+//        ], 
+//        $astLocator
+//    );
+    $directoriesSourceLocator = (new MakeLocatorForComposerJsonAndInstalledJson)
+                                (
+                                    $code_left_branch_path, 
+                                    $astLocator
+                                );
+    $reflector = new DefaultReflector(
+        new AggregateSourceLocator(
+            [
+                $directoriesSourceLocator,
+                new PhpInternalSourceLocator($astLocator, new ReflectionSourceStubber())
+            ]
+        )
+    );
+    
+    ////////////////////////////////////////////////////////
+    $astLocator2 = (new BetterReflection())->astLocator();
+//    $directoriesSourceLocator2 = new DirectoriesSourceLocator(
+//        [
+//            $code_right_branch_path . DIRECTORY_SEPARATOR . 'src',
+//            $code_right_branch_path . DIRECTORY_SEPARATOR . 'vendor',
+//        ], 
+//        $astLocator2
+//    );
+    $directoriesSourceLocator2 = (new MakeLocatorForComposerJsonAndInstalledJson)
+                                (
+                                    $code_right_branch_path, 
+                                    $astLocator2
+                                );
+
+    $reflector2 = new DefaultReflector(
+        new AggregateSourceLocator(
+            [
+                $directoriesSourceLocator2,
+                new PhpInternalSourceLocator($astLocator, new ReflectionSourceStubber())
+            ]
+        )
+    );
+    
+    foreach($classes_to_compare as $class_to_compare) {
+        
+        echo PHP_EOL ."Processing `{$class_to_compare}`...." . PHP_EOL;
+        
+        ////////////////////////////////////////////////////////
+        $reflectionClass = $reflector->reflectClass($class_to_compare);
+        $method_objs1 = $reflectionClass->getMethods();
+        $method_names1 = array_keys($method_objs1);
+        sort($method_names1); //var_dump($method_names1);
+
+        ////////////////////////////////////////////////////////
+        $reflectionClass2 = $reflector2->reflectClass($class_to_compare);
+        $method_objs2 = $reflectionClass2->getMethods();
+        $method_names2 = array_keys($method_objs2);
+        sort($method_names2); //var_dump($method_names2);
+
+        $methods_in_left_not_in_right_branch = array_diff($method_names1, $method_names2);
+        $methods_in_right_branch_not_in_left = array_diff($method_names2, $method_names1);
+        
+        $addQualifiersToMethods = function(array &$method_names, array $method_objs) {
+
+            foreach($method_names as $key => $method_name) {
+
+                /** @var Roave\BetterReflection\Reflection\ReflectionMethod $method_obj */
+                $method_obj = $method_objs[$method_name];
+                $method_names[$key] =
+                    ($method_obj->isFinal() ? 'final ' : '')
+                    . ($method_obj->isPrivate() ? 'private ' : '')
+                    . ($method_obj->isProtected() ? 'protected ' : '')
+                    . ($method_obj->isPublic() ? 'public ' : '')
+                    . ($method_obj->isStatic() ? 'static ' : '')
+                    . 'function ' .$method_name;
+            }
+        };
+        $addQualifiersToMethods($methods_in_left_not_in_right_branch, $method_objs1);
+        $addQualifiersToMethods($methods_in_right_branch_not_in_left, $method_objs2);
+
+        echo PHP_EOL . "`{$class_to_compare}'s` Methods in `{$left_branch}` branch not in `{$right_branch}` branch:" . PHP_EOL;
+        echo implode(PHP_EOL, $methods_in_left_not_in_right_branch)  . PHP_EOL;
+
+        echo PHP_EOL . "`{$class_to_compare}'s` Methods in `{$right_branch}` branch not in `{$left_branch}` branch:" . PHP_EOL;
+        echo implode(PHP_EOL, $methods_in_right_branch_not_in_left)  . PHP_EOL;
+        
+        $diff_results[] = [
+            'className'     => $class_to_compare,
+            $left_branch    => implode(PHP_EOL, $methods_in_left_not_in_right_branch)  . PHP_EOL,
+            $right_branch   => implode(PHP_EOL, $methods_in_right_branch_not_in_left)  . PHP_EOL,
+        ];
+        
+        echo PHP_EOL ."DONE: Processing `{$class_to_compare}`...." . PHP_EOL;
+        gc_collect_cycles();
+    }
+    
+    echo PHP_EOL . PHP_EOL;
+    $table = new CliTable;
+    $table->setTableColor('blue');
+    $table->setHeaderColor('cyan');
+    $table->addField('Class Name',  'className',    false,  'white');
+    $table->addField($left_branch,  $left_branch,   false,  'white');
+    $table->addField($right_branch, $right_branch,  false,  'white');
+    $table->injectData($diff_results);
+    $table->display();
+    
+    $end_time = microtime(true);
+    $elapsed = $end_time - $start_time;
+    
+    echo PHP_EOL . 'Time taken: ' . readableElapsedTime($elapsed). PHP_EOL. PHP_EOL;
+    
+} else {
+    
+    echo PHP_EOL . "`{$tmp_dir}` is not writable. Exiting..." . PHP_EOL;
+    
+} // if(is_writable($tmp_dir)){...} else {...}

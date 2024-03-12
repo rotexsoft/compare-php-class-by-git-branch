@@ -1,0 +1,25 @@
+{
+    "name": "rotexsoft/compare-php-class-by-git-branch",
+    "description": "This package compares versions of PHP classes across two git branches to show methods & properties present in one branch & not in the other",
+    "type": "library",
+    "license": "BSD-3-Clause",
+    "authors" : [{
+        "name" : "Rotimi Adegbamigbe",
+        "email" : "rotexdegba007-github@yahoo.ca",
+        "homepage" : "https://github.com/rotexdegba",
+        "role" : "Developer"
+    }],
+    "autoload": {
+        "psr-4": {
+            "Rotexsoft\\ComparePhpClassByGitBranch\\": "src/"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable" : true,
+    "require": {
+        "php" : ">=8.1.0",
+        "roave/better-reflection": "^6.25",
+        "jc21/clitable": "^1.3"
+    },
+    "bin": ["bin/compare-php-class-by-git-branch"]
+}
